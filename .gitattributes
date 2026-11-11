@@ -1,0 +1,4 @@
+* text=auto
+# Shell scripts must keep LF or they fail on Linux and Git Bash
+api/mvnw text eol=lf
+*.cmd text eol=crlf

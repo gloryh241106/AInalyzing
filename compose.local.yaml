@@ -1,0 +1,5 @@
+# Dev only: expose PostgreSQL on loopback so Spring Boot on the host can reach it.
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"

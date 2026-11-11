@@ -1,0 +1,14 @@
+# VPS stack. The app service is added by task 10 (deploy); for now only the database.
+services:
+  db:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: ainalyzing
+      POSTGRES_USER: ${DB_USER:-ainalyzing}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql
+    restart: unless-stopped
+
+volumes:
+  db-data:
