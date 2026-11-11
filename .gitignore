@@ -1,0 +1,13 @@
+# Java
+api/target/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Secrets and local files
+.env
+*.log
+.DS_Store
+.idea/
+.vscode/
