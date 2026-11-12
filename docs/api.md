@@ -16,10 +16,12 @@ Một request có thể có nhiều lỗi; `field` và `row` là null khi không
 |---|---|---|---|
 | `GET /api/health` | (không có) | 200 `{"status":"UP","db":"UP"}` | 503 `{"status":"DOWN","db":"DOWN"}` |
 | `GET /api/demo` | (không có) | 200 danh sách ca: `caseCode`, `title`, `request` (giống A.1, để React điền form) | 503 `DB_UNAVAILABLE` |
-| `POST /api/analyze` | `multipart/form-data`: part `request` (application/json, A.1) và part `file` (text/csv, chỉ khi `demandSource` là `csv`) | 200 A.2 | 400 `VALIDATION_ERROR` · 413 `FILE_TOO_LARGE` · 422 `CSV_INVALID` · 422 `INSUFFICIENT_SAMPLES` · 503 `DB_UNAVAILABLE` |
-| `POST /api/analysis/insight` | `{"analysisId"}` | 200 A.3 với status `ok` hoặc `fallback` | 404 `{"status":"stale_analysis"}` |
-| `POST /api/analysis/chat` | `{"analysisId","question"}` (question ≤500 ký tự, server tự cắt) | 200 A.4 với status `ok`, `fallback` hoặc `unsupported` | 404 `{"status":"stale_analysis"}` |
+| `POST /api/analyze` | `multipart/form-data`: part `request` (application/json, A.1) và part `file` (text/csv, chỉ khi `demandSource` là `csv`). Với `manual`/`demo` cũng nhận body `application/json` là A.1 | 200 A.2 | 400 `VALIDATION_ERROR` · 413 `FILE_TOO_LARGE` (quá 1 MiB hoặc quá 366 dòng) · 422 `CSV_INVALID` (cả tệp không phải UTF-8) · 422 `INSUFFICIENT_SAMPLES` · 503 `DB_UNAVAILABLE` · 415 `UNSUPPORTED_MEDIA_TYPE` |
+| `POST /api/analysis/insight` | `{"analysisId"}` | 200 A.3 với status `ok` hoặc `fallback` | 400 `VALIDATION_ERROR` (thiếu analysisId) · 404 `{"status":"stale_analysis"}` |
+| `POST /api/analysis/chat` | `{"analysisId","question","scenario"}`; question ≤500 ký tự (server tự cắt), `scenario` là kịch bản đang xem (`SLOW`/`BASE`/`FAST`, mặc định `BASE`) | 200 A.4 với status `ok`, `fallback` hoặc `unsupported` | 400 `VALIDATION_ERROR` · 404 `{"status":"stale_analysis"}` |
 | `POST /api/session/reset` | (không có) | 204, xóa snapshot và hội thoại của phiên | (không có) |
+
+`stale_analysis` dùng chung cho analysisId hết hạn (30 phút), đã đặt lại, hoặc thuộc phiên khác; server không cho biết id đó có tồn tại ở phiên khác hay không và không gọi Groq. Mọi response có header `X-Request-Id` để đối chiếu log.
 
 ## A.1. Request của `POST /api/analyze`
 
@@ -55,6 +57,11 @@ Một request có thể có nhiều lỗi; `field` và `row` là null khi không
 | `conditions` | `{SLOW, BASE, FAST}`, mỗi kịch bản `{breakEvenTotalVnd, maxWinningTotalVnd, minSellableDaysAtQuotedPrice, pending}`. `minSellableDaysAtQuotedPrice` là null khi không ngày 1–14 nào đạt hoặc B vượt ngân sách. Cả `conditions` là null khi A chưa đủ điều kiện làm mốc |
 | `salesSummary` | Bản tóm tắt BR-10 khi nguồn là csv, ngược lại null |
 | `facts` | Danh sách `{id, value, unit, scenario}` theo Phụ lục B |
+| `input` *(bổ sung)* | Bản A.1 đã kiểm, cùng dạng request, để gắn bảng với đầu vào của chính lượt tính (FR-09) |
+| `expiresAt` *(bổ sung)* | Thời điểm ISO-8601 (UTC) mà `analysisId` hết hạn |
+| `warnings` *(bổ sung)* | `[{code, scenario, option}]`: `NEGATIVE_MARGIN` (phương án lỗ ở kịch bản đó, BR-07) và `WINNER_DIFFERS_BY_SCENARIO` (kết luận đổi giữa các kịch bản, FR-07; scenario và option là null) |
+
+`demandSourceInfo` có thêm `demoCaseCode` (null nếu không phải demo) và `synthetic` (true với ca demo). `inStockSamplesByWeekday` và `salesSummary.byWeekday` dùng khóa `MON`–`SUN`.
 
 Số kiểm cho ca chuẩn `YOGURT_STD` (B còn 5 ngày, ngân sách 432.000đ, D là thứ Sáu 13/11/2026, nhu cầu Cơ sở 6,6,6,7,7,3,6 lặp hai tuần). `costVnd` của A là 284000, của B là 432000; `revenueVnd` bằng `unitsSold × 15000`; `pending` false ở mọi dòng. `api/.../PurchaseCalculatorTest` kiểm đúng bảng này.
 
@@ -78,6 +85,8 @@ Ca `YOGURT_6D`: B bán 29 / 35 / 41 hũ, còn 3000 / 93000 / 183000 ở SLOW / B
 
 Groq chỉ trả mã (kind, templateId, factId); mọi trường text do Renderer dựng từ danh mục template ở LLM Architecture §3 và điền số Java. Thẻ được lưu theo `analysisId`; gọi lại trả cùng nội dung, không gọi Groq lần nữa. Khi status là `fallback`, `model` là null và insights theo BR-12.
 
+Bổ sung: `fallbackReason` (null khi `ok`) là một trong `DISABLED` (server không có khóa), `LOCAL_POLICY` (nguồn này không được gửi ra Groq), `RATE_LIMITED`, `TIMEOUT`, `UPSTREAM_ERROR`, `REJECTED`, `INVALID_OUTPUT`, `TOOL_FAILURE`. `recommendation.option` luôn là winner Java của `suggestedScenario`. `insights[].kind` thuộc `SHELF_LIFE`, `BUDGET`, `SCENARIO_CHANGE`, `STOCKOUT`, `TREND`, `ANOMALY`, `LOSS`, `EXPIRY`, `SHORTAGE`. Danh mục template nằm trong `api/src/main/java/vn/ainalyzing/api/llm/TemplateCatalog.java`.
+
 ## A.4. Response của `POST /api/analysis/chat`
 
 ```json
@@ -85,6 +94,15 @@ Groq chỉ trả mã (kind, templateId, factId); mọi trường text do Rendere
 ```
 
 `intent` thuộc `WHY_OPTION`, `WHAT_IF_PRICE`, `WHAT_IF_BUDGET`, `WHAT_IF_SHELF_LIFE` hoặc `UNSUPPORTED`. Câu hỏi cần con số mới (ví dụ ngân sách khác) được trả lời bằng ngưỡng sẵn có và hướng dẫn sửa đầu vào rồi Tính lại.
+
+Bổ sung: `answer.scenario` là kịch bản câu trả lời nói tới (có thể khác kịch bản đang xem khi câu hỏi nêu tên kịch bản khác) và `fallbackReason` như A.3. Ý nghĩa status: `ok` là Groq chọn ý định/mẫu và Java đã kiểm; `unsupported` là Groq xác định câu hỏi ngoài phạm vi; `fallback` là Java tự trả lời bằng mẫu (Groq không dùng được hoặc trả sai), `answer.intent` vẫn có thể là `UNSUPPORTED`. Ví dụ:
+
+```json
+{"analysisId":"Kpm4zyhIVnTs9czsIk8gVQ","status":"ok","fallbackReason":null,
+ "answer":{"intent":"WHY_OPTION","scenario":"BASE",
+  "text":"Ở kịch bản Cơ sở, nên chọn đơn A: khoản còn lại sau tiền nhập là 76.000đ, so với 48.000đ của đơn B (hơn 28.000đ). ...",
+  "factIds":["F_A_MARGIN_BASE","F_B_MARGIN_BASE","F_MARGIN_GAP_BASE","F_A_SOLD_BASE","F_A_EXPIRED_BASE","F_B_SOLD_BASE","F_B_EXPIRED_BASE"]}}
+```
 
 ## A.5. Ca demo trong PostgreSQL
 
@@ -116,3 +134,12 @@ Java sinh fact, Groq nhận `{id, value, unit}` và chỉ được trích id. M�
 | `F_A_MARGIN_S`, `F_B_MARGIN_S`, `F_MARGIN_GAP_S` | VND | Luôn có |
 | `F_B_OVER_BUDGET` | VND (tổng giá B trừ ngân sách) | Khi B vượt ngân sách |
 | `F_BREAKEVEN_TOTAL_S`, `F_MAX_WIN_TOTAL_S`, `F_B_MIN_DAYS_S` | VND, VND, ngày | Khi A đủ điều kiện làm mốc |
+| `F_SELL_PRICE` *(bổ sung)* | VND/hũ | Luôn có |
+| `F_OPENING_UNITS`, `F_OPENING_DAYS` *(bổ sung)* | hũ, ngày | Luôn có; ngày chỉ khi có tồn |
+| `F_A_UNITS`, `F_B_UNITS` *(bổ sung)* | hũ | Luôn có |
+| `F_A_DAYS`, `F_B_DAYS` *(bổ sung)* | ngày | Khi hạn đã xác nhận |
+| `F_A_STATUS`, `F_B_STATUS` *(bổ sung)* | mã: `ELIGIBLE`, `OVER_BUDGET`, `SHELF_LIFE_PENDING` | Luôn có |
+| `F_A_OVER_BUDGET` *(bổ sung)* | VND | Khi A vượt ngân sách |
+| `F_WINNER_S` *(bổ sung)* | mã: `A`, `B`, `TIE`, `NONE` | Luôn có |
+
+Fact có giá trị Java là null (ví dụ khoản còn lại của đơn chưa xác nhận hạn) không được sinh ra, nên Groq không thể trích một con số không tồn tại. Ca chuẩn không CSV có 53 fact, ca CSV mẫu (`yogurt_56d.csv`) có 79 fact.

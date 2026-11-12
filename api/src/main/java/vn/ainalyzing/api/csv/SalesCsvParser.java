@@ -34,7 +34,8 @@ public final class SalesCsvParser {
             }
             int row = i + 1;
             if (++dataRows > MAX_ROWS) {
-                problems.add(new CsvException.Problem(CODE, "Tệp có hơn " + MAX_ROWS + " dòng dữ liệu", row));
+                // NFR-02 / Spec: a file over the limit is HTTP 413, like a file over 1 MiB.
+                problems.add(new CsvException.Problem("FILE_TOO_LARGE", "Tệp có hơn " + MAX_ROWS + " dòng dữ liệu", row));
                 break;
             }
             String[] cells = line.split(",", -1);
