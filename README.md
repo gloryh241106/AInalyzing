@@ -52,3 +52,7 @@ cd web && npm run build
 ## Git
 
 No direct pushes to `main`. One branch per task, `<area>/<task-id>-<short-name>` with area `backend`, `frontend`, `llm` or `docs`, e.g. `backend/04-analyze`. Conventional Commits (`feat(csv): ...`). Open a draft PR early; another member reviews before squash-merge.
+
+## Deploy
+
+`Dockerfile` builds React into Spring Boot's `/static` and packages one jar; `compose.yaml` runs PostgreSQL (internal only), the app (loopback only) and Caddy for HTTPS. VPS runbook, update and rollback: [docs/deploy.md](docs/deploy.md). The VPS `.env` template is `deploy/env.vps.example`.

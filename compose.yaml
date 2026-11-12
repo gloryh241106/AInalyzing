@@ -1,4 +1,8 @@
-# VPS stack. The app service is added by task 10 (deploy); for now only the database.
+# VPS stack (NFR-04/05): PostgreSQL on the internal network only, the Spring Boot app (React build inside the jar)
+# on loopback, and Caddy terminating HTTPS. Secrets and the domain come from .env next to this file (never
+# committed). Runbook: docs/deploy.md.
+name: ainalyzing
+
 services:
   db:
     image: postgres:18.6
@@ -8,7 +12,51 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d ainalyzing"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: ainalyzing-app:${APP_VERSION:-local}
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/ainalyzing
+      DB_USER: ${DB_USER:-ainalyzing}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      GROQ_TIMEOUT_MS: ${GROQ_TIMEOUT_MS:-5000}
+      GROQ_MAX_CALLS_PER_MINUTE: ${GROQ_MAX_CALLS_PER_MINUTE:-20}
+      GROQ_EGRESS_SOURCES: ${GROQ_EGRESS_SOURCES:-demo,manual,csv}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # Loopback only: health checks from the VPS itself. The public path is Caddy.
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11.9
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
     restart: unless-stopped
 
 volumes:
   db-data:
+  caddy-data:
+  caddy-config:

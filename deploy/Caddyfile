@@ -1,0 +1,20 @@
+# HTTPS in front of Spring Boot (NFR-04). DOMAIN comes from .env; Caddy obtains and renews the certificate itself.
+# The DNS A record of DOMAIN must point at the VPS and ports 80 and 443 must be open.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The CSV limit is 1 MiB (Spring answers 413 FILE_TOO_LARGE up to 2 MiB); refuse anything far larger here.
+	request_body {
+		max_size 3MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	reverse_proxy app:8080
+}
