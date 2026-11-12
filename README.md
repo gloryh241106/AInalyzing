@@ -22,8 +22,11 @@ Changing a version: one PR that updates this table, the file in the third column
 
 ```
 api/   Spring Boot. Packages under vn.ainalyzing.api:
-       web (controllers, DTO)  analysis (FEFO, ranking, conditions)  csv (CSV, forecast, sales summary)
-       llm (Groq)  demo (demo cases from PostgreSQL)
+       web (controllers, request validation, error mapping)
+       analysis (FEFO, ranking, conditions, facts, session snapshots)  csv (CSV, forecast, sales summary)
+       llm (Groq client, prompts, answer templates, insight card, chat with tool loop and fallback)
+       demo (demo cases from PostgreSQL)
+scripts/smoke_test.py  End-to-end acceptance check against a running app.
 web/   React + Vite. Components in src/components, API calls in src/api.
 data/demo/  Synthetic CSV files.
 docs/  api.md (contract), deploy.md, qa.md.
@@ -38,16 +41,17 @@ cd api && ./mvnw spring-boot:run       # Windows: .\mvnw.cmd spring-boot:run
 cd web && npm ci && npm run dev        # http://localhost:5173, /api goes to :8080
 ```
 
-Spring Boot reads `DB_URL`, `DB_USER`, `DB_PASSWORD` from the environment (defaults point at the local container). Flyway creates the table and seeds the four demo cases on start-up. Without `GROQ_API_KEY` the app still runs and uses the rule-based fallback card.
+Spring Boot reads `DB_URL`, `DB_USER`, `DB_PASSWORD`, `GROQ_*` and `COOKIE_SECURE` from the environment, and when started from `api/` also from the repo-root `.env` (real environment variables win). Flyway creates the table and seeds the four demo cases on start-up. Without `GROQ_API_KEY` the app still runs: the table is always computed by Java and the insight card and chat answer from local templates (status `fallback`). Never commit `.env` or paste the key into code, docs or logs.
 
 ## Test
 
 ```bash
-cd api && ./mvnw verify      # unit tests, no database needed
+cd api && ./mvnw verify                               # 63 tests, no database or Groq needed
+python3 scripts/smoke_test.py http://localhost:8080   # end-to-end against a running app (also works on the VPS URL)
 cd web && npm run build
 ```
 
-`PurchaseCalculatorTest` checks every number in the Specification's check table (Phụ lục A.2); `CsvForecastTest` checks that `data/demo/yogurt_56d.csv` gives the demand series in Phụ lục A.5.
+`PurchaseCalculatorTest` checks every number in the Specification's check table (Phụ lục A.2); `CsvForecastTest` checks that `data/demo/yogurt_56d.csv` gives the demand series in Phụ lục A.5; `GroqFlowTest` runs AC-08a–e against a local stub of the Groq API (tool loop, timeout, 429, invalid output, session isolation, outbound payload); `ApiFlowTest` covers the HTTP contract. Acceptance results: [docs/qa.md](docs/qa.md). Decisions where the documents disagreed: [docs/decisions.md](docs/decisions.md).
 
 ## Git
 
