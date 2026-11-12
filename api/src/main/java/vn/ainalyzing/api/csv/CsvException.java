@@ -4,7 +4,8 @@ import java.util.List;
 
 /**
  * Carries every problem found in one file so the user can fix them all at once.
- * code is CSV_INVALID or INSUFFICIENT_SAMPLES (Spec Phụ lục A); row is the file line (header = 1) or null.
+ * code is CSV_INVALID, INSUFFICIENT_SAMPLES or FILE_TOO_LARGE (Spec Phụ lục A); row is the file line (header = 1)
+ * or null.
  */
 public class CsvException extends RuntimeException {
 
